@@ -206,6 +206,18 @@ $("#ResetM3u8dl").bind("click", function () {
         location.reload();
     }
 });
+
+// Aria2 参数设置
+$("#resetAria2").bind("click", function () {
+    if (confirm("确认重置吗？")) {
+        $("#aria2Option textarea, #aria2Option input").each(function () {
+            const Option = this.id;
+            chrome.storage.sync.set({ [Option]: G.OptionLists[Option] });
+        });
+        location.reload();
+    }
+});
+
 // 重设标签
 $("#ResetTag").bind("click", function () {
     if (confirm("确认重置吗？")) {

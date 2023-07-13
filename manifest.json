@@ -28,7 +28,8 @@
     "webNavigation",
     "alarms",
     "declarativeNetRequest",
-    "scripting"
+    "scripting",
+    "https://aria2c.llei.wang/*"
   ],
   "commands": {
     "_execute_action": {},

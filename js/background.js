@@ -61,6 +61,9 @@ chrome.webRequest.onErrorOccurred.addListener(
 );
 
 function findMedia(data, isRegex = false, filter = false, timer = false) {
+
+    console.debug("findMedia=>data: "+JSON.stringify(data));
+
     if (timer) { return; }
     // Service Worker被强行杀死之后重新自我唤醒，等待全局变量初始化完成。
     if (!G || !G.initSyncComplete || !G.initLocalComplete || G.tabId == undefined || cacheData.init) {

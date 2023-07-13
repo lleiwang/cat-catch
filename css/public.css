@@ -161,6 +161,9 @@ button:active {
   img.download {
     content: url(../img/download-dark.png);
   }
+  img.download-aria2 {
+    content: url(../img/download-aria2-dark.png);
+  }
   img.qrcode {
     content: url(../img/qrcode-dark.png);
   }

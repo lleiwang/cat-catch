@@ -93,6 +93,7 @@ function AddMedia(data, currentTab = true) {
                 <img src="img/parsing.png" class="icon parsing ${data.parsing ? "" : "hide"}" id="parsing" data-type="${data.parsing}" title="解析"/>
                 <img src="img/play.png" class="icon play ${data.isPlay ? "" : "hide"}" id="play" title="预览"/>
                 <img src="img/download.png" class="icon download" id="download" title="下载"/>
+                <img src="img/download-aria2.png" class="icon download-aria2" id="downloadAria2" title="Aria2下载"/>
             </div>
             <div class="url hide">
                 <div id="mediaInfo" data-state="false">
@@ -230,6 +231,36 @@ function AddMedia(data, currentTab = true) {
         }, function (id) { downData[id] = data; });
         return false;
     });
+
+    // Aria2c下载
+    data.html.find('#downloadAria2').click(function () {
+        if (G.m3u8dl && (isM3U8(data) || isMPD(data))) {
+            let m3u8dlArg = templates(G.m3u8dlArg, data);
+            let url = 'm3u8dl://' + Base64.encode(m3u8dlArg);
+            if (url.length >= 2046) {
+                navigator.clipboard.writeText(m3u8dlArg);
+                Tips("m3u8dl参数太长无法唤醒m3u8DL程序, 请手动粘贴下载。", 2000);
+                return false;
+            }
+            if (G.isFirefox) {
+                window.location.href = url;
+                return false;
+            }
+            chrome.tabs.update({ url: url });
+            return false;
+        }
+
+        console.error(JSON.stringify(data));
+        alert(JSON.stringify(data));
+        aria2c_download(data.url, data.filename);
+        // chrome.downloads.download({
+        //     url: data.url,
+        //     filename: data.downFileName,
+        //     saveAs: G.saveAs
+        // }, function (id) { downData[id] = data; });
+        return false;
+    });
+
     //播放
     data.html.find('#play').click(function () {
         if (isEmpty(G.Player)) { return true; }
@@ -523,6 +554,9 @@ const interval = setInterval(function () {
     // 监听资源数据
     chrome.runtime.onMessage.addListener(function (MediaData, sender, sendResponse) {
         if (MediaData.Message) { return; }
+
+        console.debug("On Message: "+ JSON.stringify(MediaData))
+
         const html = AddMedia(MediaData, MediaData.tabId == G.tabId);
         if (MediaData.tabId == G.tabId) {
             !currentCount && $mediaList.append($current);
@@ -674,4 +708,67 @@ function getAllData() {
     data.push(...allData.get(true).values());
     data.push(...allData.get(false).values());
     return data;
+}
+
+
+function aria2c_download(url, file_name) {
+
+    var headers = new Headers();
+    headers.append("Content-Type", "application/json");
+    headers.append("Access-Control-Allow-Origin", "*")
+
+    if( !G.aria2Switch ){
+        alert("Aria2 未开启");
+        return;
+    } else {
+        var aria2_url = G.aria2Url || ''
+        var aria2_secret = G.aria2Secret || ''
+
+        if(aria2_url.length == 0 || !aria2_url.startsWith('http')){
+            alert("Aria2 URL 配置参数不正确！");
+            return;
+        }
+    }
+
+    var url = url || ''
+    var file_name  = file_name || ''
+
+    var payload = JSON.stringify([
+        {
+            "jsonrpc": "2.0",
+            "method": "aria2.addUri",
+            "id": Date.parse(new Date()),
+            "params": [
+                [
+                    url
+                ],
+                {
+                    "out": file_name,
+                    "split": "5",
+                    "max-connection-per-server": "5",
+                    "seed-ratio": "0"
+                }
+            ]
+        }
+    ]);
+
+    var requestOptions = {
+        method: 'POST',
+        headers: headers,
+        body: payload,
+        redirect: 'follow'
+    };
+
+    /**
+     * 跨域访问Nignx设置
+     add_header 'Access-Control-Allow-Origin' *;
+     add_header 'Access-Control-Allow-Credentials' 'true';
+     add_header 'Access-Control-Allow-Methods' *;
+     add_header 'Access-Control-Allow-Headers' *;
+     */
+    // fetch("https://aria2c.llei.wang/jsonrpc", requestOptions)
+    fetch(G.aria2Url, requestOptions)
+        .then(response => response.text())
+        .then(result => console.log('[Aria2c] Task Result ==> ',result))
+        .catch(error => console.log('error', error));
 }
