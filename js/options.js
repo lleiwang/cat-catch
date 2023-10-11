@@ -11,7 +11,7 @@ chrome.storage.sync.get(G.OptionLists, function (items) {
         $("#typeList").append(Gethtml("Type", { type: items.Type[key].type, size: items.Type[key].size, state: items.Type[key].state }));
     }
     for (let key in items.Regex) {
-        $("#regexList").append(Gethtml("Regex", { type: items.Regex[key].type, regex: items.Regex[key].regex, ext: items.Regex[key].ext, state: items.Regex[key].state }));
+        $("#regexList").append(Gethtml("Regex", { type: items.Regex[key].type, regex: items.Regex[key].regex, ext: items.Regex[key].ext, blackList: items.Regex[key].blackList, state: items.Regex[key].state }));
     }
     setTimeout(() => {
         for (let key in items) {
@@ -28,15 +28,15 @@ chrome.storage.sync.get(G.OptionLists, function (items) {
 //新增格式
 $("#AddExt").bind("click", function () {
     $("#extList").append(Gethtml("Ext", { state: true }));
-    $("#extList #text").last().focus();
+    $("#extList [name=text]").last().focus();
 });
 $("#AddType").bind("click", function () {
     $("#typeList").append(Gethtml("Type", { state: true }));
-    $("#typeList #text").last().focus();
+    $("#typeList [name=text]").last().focus();
 });
 $("#AddRegex").bind("click", function () {
     $("#regexList").append(Gethtml("Regex", { type: "ig", state: true }));
-    $("#regexList #text").last().focus();
+    $("#regexList [name=text]").last().focus();
 });
 $("#version").html("猫抓 v" + chrome.runtime.getManifest().version);
 
@@ -59,24 +59,32 @@ function Gethtml(Type, Param = new Object()) {
     let html = "";
     switch (Type) {
         case "Ext":
-            html = `<td><input type="text" value="${Param.ext ? Param.ext : ""}" id="text" placeholder="后缀名" class="ext"></td>`
-            html += `<td><input type="number" placeholder="大小限制" value="${Param.size ? Param.size : 0}" class="size" id="size">KB</td>`
+            html = `<td><input type="text" value="${Param.ext ? Param.ext : ""}" name="text" placeholder="后缀名" class="ext"></td>`
+            html += `<td><input type="number" placeholder="大小限制" value="${Param.size ? Param.size : 0}" class="size" name="size">KB</td>`
             break;
         case "Type":
-            html = `<td><input type="text" value="${Param.type ? Param.type : ""}" id="text" placeholder="类型" class="type"></td>`
-            html += `<td><input type="number" placeholder="大小限制" value="${Param.size ? Param.size : 0}" class="size" id="size">KB</td>`
+            html = `<td><input type="text" value="${Param.type ? Param.type : ""}" name="text" placeholder="类型" class="type"></td>`
+            html += `<td><input type="number" placeholder="大小限制" value="${Param.size ? Param.size : 0}" class="size" name="size">KB</td>`
             break;
         case "Regex":
-            html = `<td><input type="text" value="${Param.type ? Param.type : ""}" id="type" class="regexType"></td>`
-            html += `<td><input type="text" value="${Param.regex ? Param.regex : ""}" placeholder="正则表达式" id="regex" class="regex"></td>`
-            html += `<td><input type="text" value="${Param.ext ? Param.ext : ""}" id="regexExt" class="regexExt"></td>`
+            html = `<td><input type="text" value="${Param.type ? Param.type : ""}" name="type" class="regexType"></td>`
+            html += `<td><input type="text" value="${Param.regex ? Param.regex : ""}" placeholder="正则表达式" name="regex" class="regex"></td>`
+            html += `<td><input type="text" value="${Param.ext ? Param.ext : ""}" name="regexExt" class="regexExt"></td>`
+            html += `<td>
+            <div class="switch">
+                <label class="switchLabel switchRadius">
+                    <input type="checkbox" name="blackList" class="switchInput" ${Param.blackList ? 'checked="checked"' : ""}/>
+                    <span class="switchRound switchRadius"><em class="switchRoundBtn switchRadius"></em></span>
+                </label>
+            </div>
+        </td>`
     }
     html = $(`<tr data-type="${Type}">
             ${html}
             <td>
                 <div class="switch">
                     <label class="switchLabel switchRadius">
-                        <input type="checkbox" id="state" class="switchInput" ${Param.state ? 'checked="checked"' : ""}/>
+                        <input type="checkbox" name="state" class="switchInput" ${Param.state ? 'checked="checked"' : ""}/>
                         <span class="switchRound switchRadius"><em class="switchRoundBtn switchRadius"></em></span>
                     </label>
                 </div>
@@ -94,13 +102,13 @@ function Gethtml(Type, Param = new Object()) {
     html.find("input").on("input", function () {
         Save(Type, 200);
     });
-    html.find("#state").on("click", function () {
+    html.find("[name=state]").on("click", function () {
         Save(Type);
     });
     if (Type == "Type") {
         html.find("input").blur(function () {
             $("#typeList tr").each(function () {
-                let GetText = $(this).find("#text").val();
+                let GetText = $(this).find("[name=text]").val();
                 if (isEmpty(GetText)) { return true; }
                 GetText = GetText.trim();
                 const test = GetText.split("/");
@@ -115,9 +123,8 @@ function Gethtml(Type, Param = new Object()) {
 }
 // 预览模板
 $("#PlayerTemplate").change(function () {
-    const Option = this.id;
     const Value = $(this).val();
-    if (Option == "PlayerTemplate" && playerList.has(Value) && Value != "tips") {
+    if (this.id == "PlayerTemplate" && playerList.has(Value) && Value != "tips") {
         const template = playerList.get(Value).template;
         $("#Player").val(template);
         chrome.storage.sync.set({ Player: template });
@@ -126,32 +133,32 @@ $("#PlayerTemplate").change(function () {
 //失去焦点 保存自动清理数 模拟手机User Agent 自定义播放调用模板
 let debounce2 = undefined;
 $("[save='input']").on("input", function () {
-    const Option = this.id;
-    let val = $(this).val();
-    if (Option == "OtherAutoClear") {
-        val = parseInt(val);
-    }
+    const val = $(this).val();
     clearTimeout(debounce2);
     debounce2 = setTimeout(() => {
-        chrome.storage.sync.set({ [Option]: val });
+        chrome.storage.sync.set({ [this.id]: val });
     }, 300);
 });
 // 调试模式 使用网页标题做文件名 使用PotPlayer预览 显示网站图标 刷新自动清理
 $("[save='click']").bind("click", function () {
-    const Option = this.id;
-    chrome.storage.sync.set({ [Option]: $(this).prop('checked') });
+    chrome.storage.sync.set({ [this.id]: $(this).prop('checked') });
 });
+// [save='select'] 元素 储存
+$("[save='select']").on("change", function () {
+    chrome.storage.sync.set({ [this.id]: parseInt($(this).val()) });
+});
+
 // 一键禁用/启用
 $("#allDisable, #allEnable").bind("click", function () {
-    let state = this.id == "allDisable" ? false : true;
-    let obj = $(this).data("switch");
+    const state = this.id == "allEnable";
+    const obj = $(this).data("switch");
     let query;
     if (obj == "Ext") {
-        query = $("#extList #state");
+        query = $("#extList [name=state]");
     } else if (obj == "Type") {
-        query = $("#typeList #state");
+        query = $("#typeList [name=state]");
     } else if (obj == "Regex") {
-        query = $("#regexList #state");
+        query = $("#regexList [name=state]");
     }
     query.each(function () {
         $(this).prop("checked", state);
@@ -303,7 +310,7 @@ $("#exportOptions").bind("click", function () {
 });
 //导入配置
 $("#importOptionsFile").change(function () {
-    let fileReader = new FileReader();
+    const fileReader = new FileReader();
     fileReader.onload = function () {
         let importData = this.result;
         try {
@@ -312,13 +319,14 @@ $("#importOptionsFile").change(function () {
             importData = Base64.decode(importData);
             importData = JSON.parse(importData);
         }
+        const keys = Object.keys(G.OptionLists);
         for (let item in G.OptionLists) {
-            chrome.storage.sync.set({ [item]: importData[item] });
+            keys.includes(item) && chrome.storage.sync.set({ [item]: importData[item] });
         }
         alert("导入完成");
         location.reload();
     }
-    let file = $("#importOptionsFile").prop('files')[0];
+    const file = $("#importOptionsFile").prop('files')[0];
     fileReader.readAsText(file);
 });
 $("#importOptions").bind("click", function () {
@@ -332,9 +340,9 @@ function Save(option, sec = 0) {
         if (option == "Ext") {
             let Ext = new Array();
             $("#extList tr").each(function () {
-                let GetText = $(this).find("#text").val();
-                let GetSize = parseInt($(this).find("#size").val());
-                let GetState = $(this).find("#state").prop("checked");
+                let GetText = $(this).find("[name=text]").val();
+                let GetSize = parseInt($(this).find("[name=size]").val());
+                let GetState = $(this).find("[name=state]").prop("checked");
                 if (isEmpty(GetText)) { return true; }
                 if (isEmpty(GetSize)) { GetSize = 0; }
                 Ext.push({ ext: GetText.toLowerCase(), size: GetSize, state: GetState });
@@ -345,9 +353,9 @@ function Save(option, sec = 0) {
         if (option == "Type") {
             let Type = new Array();
             $("#typeList tr").each(function () {
-                let GetText = $(this).find("#text").val();
-                let GetSize = parseInt($(this).find("#size").val());
-                let GetState = $(this).find("#state").prop("checked");
+                let GetText = $(this).find("[name=text]").val();
+                let GetSize = parseInt($(this).find("[name=size]").val());
+                let GetState = $(this).find("[name=state]").prop("checked");
                 if (isEmpty(GetText)) { return true; }
                 if (isEmpty(GetSize)) { GetSize = 0; }
                 GetText = GetText.trim();
@@ -362,10 +370,11 @@ function Save(option, sec = 0) {
         if (option == "Regex") {
             let Regex = new Array();
             $("#regexList tr").each(function () {
-                let GetType = $(this).find("#type").val();
-                let GetRegex = $(this).find("#regex").val();
-                let GetExt = $(this).find("#regexExt").val()
-                let GetState = $(this).find("#state").prop("checked");
+                let GetType = $(this).find("[name=type]").val();
+                let GetRegex = $(this).find("[name=regex]").val();
+                let GetExt = $(this).find("[name=regexExt]").val()
+                let GetState = $(this).find("[name=state]").prop("checked");
+                let GetBlackList = $(this).find("[name=blackList]").prop("checked");
                 try {
                     new RegExp("", GetType);
                 } catch (e) {
@@ -373,7 +382,7 @@ function Save(option, sec = 0) {
                 }
                 if (isEmpty(GetRegex)) { return true; }
                 GetExt = GetExt ? GetExt.toLowerCase() : "";
-                Regex.push({ type: GetType, regex: GetRegex, ext: GetExt, state: GetState });
+                Regex.push({ type: GetType, regex: GetRegex, ext: GetExt, blackList: GetBlackList, state: GetState });
             });
             chrome.storage.sync.set({ Regex: Regex });
             return;

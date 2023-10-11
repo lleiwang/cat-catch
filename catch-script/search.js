@@ -1,24 +1,33 @@
 // const CATCH_SEARCH_ONLY = true;
 (function () {
-    const _log = console.log;
-    _log("start search.js");
     const CATCH_SEARCH_DEBUG = false;
+    // 防止 console.log 被劫持
+    if (CATCH_SEARCH_DEBUG && console.log.toString() != 'function log() { [native code] }') {
+        const newIframe = top.document.createElement("iframe");
+        newIframe.style.width = 0;
+        newIframe.style.height = 0;
+        top.document.body.appendChild(newIframe);
+        newIframe.contentWindow.document.write("<script>(window.catCatchLOG=function(){console.log(...arguments);})();</script>");
+        window.console.log = newIframe.contentWindow.catCatchLOG;
+    }
+    console.log("start search.js");
     const filter = new Set();
+    const reKeyURL = /URI="(.*)"/;
+    const reIsUrl = /^http[s]*:\/\/.+/i;
 
-    // 拦截JSON.parse 分析内容
+    // JSON.parse
     const _JSONparse = JSON.parse;
     JSON.parse = function () {
         let data = _JSONparse.apply(this, arguments);
         findMedia(data);
         return data;
     }
-    // 反检测
     JSON.parse.toString = function () {
         return _JSONparse.toString();
     }
 
     async function findMedia(data, depth = 0) {
-        CATCH_SEARCH_DEBUG && _log(data);
+        CATCH_SEARCH_DEBUG && console.log(data);
         let index = 0;
         if (!data) { return; }
         if (data instanceof Array && data.length == 16) {
@@ -65,19 +74,19 @@
                     continue;
                 }
                 if (CATCH_SEARCH_DEBUG && data[key].includes("manifest")) {
-                    _log(data);
+                    console.log(data);
                 }
             }
         }
     }
 
-    // 拦截 XHR 分析内容
+    // XHR
     const _xhrOpen = XMLHttpRequest.prototype.open;
     XMLHttpRequest.prototype.open = function (method) {
         method = method.toUpperCase();
-        CATCH_SEARCH_DEBUG && _log(this);
+        CATCH_SEARCH_DEBUG && console.log(this);
         this.addEventListener("readystatechange", function (event) {
-            CATCH_SEARCH_DEBUG && _log(this);
+            CATCH_SEARCH_DEBUG && console.log(this);
             if (this.status != 200) { return; }
             // 查找疑似key
             if (this.responseType == "arraybuffer" && this.response?.byteLength && this.response.byteLength == 16) {
@@ -85,8 +94,8 @@
             }
             if (this.response == "" || typeof this.response != "string") { return; }
             if (this.response.substring(0, 17).toLowerCase() == "data:application/") {
-                const text = this.response.substring(17);
-                toUrl(getDataM3U8(text));
+                const text = getDataM3U8(this.response.substring(17));
+                text && toUrl(text);
                 return;
             }
             if (this.responseURL.substring(0, 17).toLowerCase() == "data:application/") {
@@ -102,6 +111,7 @@
             if (this.response.toUpperCase().includes("#EXTM3U")) {
                 if (this.response.substring(0, 7) == "#EXTM3U") {
                     if (method == "GET") {
+                        toUrl(addBashUrl(getBashUrl(this.responseURL), this.response));
                         postData({ action: "catCatchAddMedia", url: this.responseURL, href: location.href, ext: "m3u8" });
                         return;
                     }
@@ -125,20 +135,19 @@
         });
         _xhrOpen.apply(this, arguments);
     }
-    // 反检测
     XMLHttpRequest.prototype.open.toString = function () {
         return _xhrOpen.toString();
     }
 
-    // 拦截 fetch 分析内容
+    // fetch
     const _fetch = window.fetch;
     window.fetch = async function (input, init) {
         const response = await _fetch.apply(this, arguments);
         const clone = response.clone();
-        CATCH_SEARCH_DEBUG && _log(response);
+        CATCH_SEARCH_DEBUG && console.log(response);
         response.arrayBuffer()
             .then(arrayBuffer => {
-                CATCH_SEARCH_DEBUG && _log({ arrayBuffer, input });
+                CATCH_SEARCH_DEBUG && console.log({ arrayBuffer, input });
                 if (arrayBuffer.byteLength == 16) {
                     postData({ action: "catCatchAddKey", key: arrayBuffer, href: location.href, ext: "key" });
                     return;
@@ -153,6 +162,7 @@
                 }
                 if (text.substring(0, 7).toUpperCase() == "#EXTM3U") {
                     if (init?.method == undefined || (init.method && init.method.toUpperCase() == "GET")) {
+                        toUrl(addBashUrl(getBashUrl(input), text));
                         postData({ action: "catCatchAddMedia", url: input, href: location.href, ext: "m3u8" });
                         return;
                     }
@@ -167,12 +177,11 @@
             });
         return clone;
     }
-    // 反检测
     window.fetch.toString = function () {
         return _fetch.toString();
     }
 
-    // 拦截 Array.prototype.slice
+    // Array.prototype.slice
     const _slice = Array.prototype.slice;
     Array.prototype.slice = function (start, end) {
         let data = _slice.apply(this, arguments);
@@ -184,47 +193,80 @@
         }
         return data;
     }
-    // 反检测
     Array.prototype.slice.toString = function () {
         return _slice.toString();
     }
 
-    // 拦截 window.btoa / window.atob
+    // window.btoa / window.atob
     const _btoa = window.btoa;
     window.btoa = function (data) {
         const base64 = _btoa.apply(this, arguments);
-        CATCH_SEARCH_DEBUG && _log(base64, data, base64.length);
+        CATCH_SEARCH_DEBUG && console.log(base64, data, base64.length);
         if (base64.length == 24 && base64.substring(22, 24) == "==") {
             postData({ action: "catCatchAddKey", key: base64, href: location.href, ext: "base64Key" });
         }
-        if (data.toUpperCase().substring(0, 7) == "#EXTM3U" && isFullM3u8(data)) {
+        if (data.substring(0, 7).toUpperCase() == "#EXTM3U" && isFullM3u8(data)) {
             toUrl(data);
         }
         return base64;
     }
-    // 反检测
     window.btoa.toString = function () {
         return _btoa.toString();
     }
     const _atob = window.atob;
     window.atob = function (base64) {
         const data = _atob.apply(this, arguments);
-        CATCH_SEARCH_DEBUG && _log(base64, data, base64.length);
+        CATCH_SEARCH_DEBUG && console.log(base64, data, base64.length);
         if (base64.length == 24 && base64.substring(22, 24) == "==") {
             postData({ action: "catCatchAddKey", key: base64, href: location.href, ext: "base64Key" });
         }
-        if (data.toUpperCase().substring(0, 7) == "#EXTM3U" && isFullM3u8(data)) {
+        if (data.substring(0, 7).toUpperCase() == "#EXTM3U" && isFullM3u8(data)) {
             toUrl(data);
         }
         return data;
     }
-    // 反检测
     window.atob.toString = function () {
         return _atob.toString();
     }
 
+    // fromCharCode
+    const _fromCharCode = String.fromCharCode;
+    let m3u8Text = '';
+    String.fromCharCode = function () {
+        const data = _fromCharCode.apply(this, arguments);
+        if (data.length < 7) { return data; }
+        if (data.substring(0, 7) == "#EXTM3U" || data.includes("#EXTINF:")) {
+            m3u8Text += data;
+            if (m3u8Text.includes("#EXT-X-ENDLIST")) {
+                toUrl(m3u8Text.split("#EXT-X-ENDLIST")[0] + "#EXT-X-ENDLIST");
+                m3u8Text = '';
+            }
+            return data;
+        }
+        const key = data.replaceAll("\u0010", "");
+        if (key.length == 32) {
+            postData({ action: "catCatchAddKey", key: key, href: location.href, ext: "key" });
+        }
+        return data;
+    }
+    String.fromCharCode.toString = function () {
+        return _fromCharCode.toString();
+    }
+
+    // DataView
+    const _DataView = DataView;
+    DataView = function () {
+        if (arguments[0] instanceof ArrayBuffer && arguments[0].byteLength == 16) {
+            postData({ action: "catCatchAddKey", key: arguments[0], href: location.href, ext: "key" });
+        }
+        return new _DataView(...arguments);
+    }
+    DataView.toString = function () {
+        return _DataView.toString();
+    }
+
     function isUrl(str) {
-        return /^http[s]*:\/\/.+/i.test(str);
+        return reIsUrl.test(str);
     }
     function isFullM3u8(text) {
         let tsLists = text.split("\n");
@@ -234,6 +276,29 @@
             return false;
         }
         return false;
+    }
+    function getBashUrl(url) {
+        let bashUrl = url.split("/");
+        bashUrl.pop();
+        return bashUrl.join("/") + "/";
+    }
+    function addBashUrl(baseUrl, m3u8Text) {
+        let m3u8_split = m3u8Text.split("\n");
+        m3u8Text = "";
+        for (let ts of m3u8_split) {
+            if (ts == "" || ts == " " || ts == "\n") { continue; }
+            if (ts.includes("URI=")) {
+                let KeyURL = reKeyURL.exec(ts);
+                if (KeyURL && KeyURL[1] && !isUrl(KeyURL[1])) {
+                    ts = ts.replace(reKeyURL, 'URI="' + baseUrl + KeyURL[1] + '"');
+                }
+            }
+            if (ts[0] != "#" && !isUrl(ts)) {
+                ts = baseUrl + ts;
+            }
+            m3u8Text += ts + "\n";
+        }
+        return m3u8Text;
     }
     function isJSON(str) {
         if (typeof str == "object") {

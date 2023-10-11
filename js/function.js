@@ -42,9 +42,9 @@ function isEmpty(obj) {
 // 修改请求头Referer
 function setReferer(referer, callback) {
     chrome.tabs.getCurrent(function (tabs) {
-        chrome.declarativeNetRequest.updateSessionRules({
-            removeRuleIds: [tabs.id],
-            addRules: [{
+        const rules = { removeRuleIds: [tabs.id] };
+        if (referer) {
+            rules.addRules = [{
                 "id": tabs.id,
                 "action": {
                     "type": "modifyHeaders",
@@ -58,10 +58,33 @@ function setReferer(referer, callback) {
                     "tabIds": [tabs.id],
                     "resourceTypes": ["xmlhttprequest"]
                 }
-            }]
-        }, function () {
+            }];
+        }
+        chrome.declarativeNetRequest.updateSessionRules(rules, function () {
             callback && callback();
         });
+    });
+}
+function setRefererPopup(referer, callback) {
+    const rules = { removeRuleIds: [1] };
+    if (referer) {
+        rules.addRules = [{
+            "id": 1,
+            "action": {
+                "type": "modifyHeaders",
+                "requestHeaders": [{
+                    "header": "Referer",
+                    "operation": "set",
+                    "value": referer
+                }]
+            },
+            "condition": {
+                "resourceTypes": ["xmlhttprequest", "media", "image"]
+            }
+        }];
+    }
+    chrome.declarativeNetRequest.updateSessionRules(rules, function () {
+        callback && callback();
     });
 }
 function deleteReferer(callback) {
@@ -72,6 +95,16 @@ function deleteReferer(callback) {
             callback && callback();
         });
     });
+}
+
+
+function awaitG(callback, sec = 0) {
+    const timer = setInterval(() => {
+        if (G.initSyncComplete && G.initLocalComplete) {
+            clearInterval(timer);
+            callback();
+        }
+    }, sec);
 }
 
 // 分割字符串
@@ -98,7 +131,7 @@ function splitString(text, separator) {
 }
 
 // 模板 函数 实现
-function templatesFunction(text, action) {
+function templatesFunction(text, action, data) {
     text = isEmpty(text) ? "" : text.toString();
     action = splitString(action, "|");
     for (let item of action) {
@@ -110,7 +143,7 @@ function templatesFunction(text, action) {
         arg = arg.map(item => {
             return item.trim().replace(/^['"]|['"]$/g, "");
         });
-        if (isEmpty(text) && action != "exists") { return "" };
+        if (isEmpty(text) && action != "exists" && action != "find") { return "" };
         if (action == "slice") {
             text = text.slice(...arg);
         } else if (action == "replace") {
@@ -147,6 +180,15 @@ function templatesFunction(text, action) {
                 text = text.toLowerCase();
             } else if (arg[0] == "upperCase") {
                 text = text.toUpperCase();
+            }
+        } else if (action == "find") {
+            text = "";
+            if (data.pageDOM) {
+                try {
+                    text = data.pageDOM.querySelector(arg[0]).innerHTML;
+                } catch (e) {
+                    console.log(e);
+                }
             }
         } else {
             text = ""; break;
@@ -203,8 +245,8 @@ function templates(text, data) {
         text = text.replaceAll(key, tags[key]);
     }
     //函数支持
-    text = text.replace(/\$\{(fullFileName|fileName|ext|title|referer|url|now|fullDate|time|initiator|webUrl|userAgent) ?\| ?([^}]+)\}/g, function (original, tag, action) {
-        return templatesFunction(data[tag], action);
+    text = text.replace(reTemplates, function (original, tag, action) {
+        return templatesFunction(data[tag], action, data);
     });
     return text;
 }

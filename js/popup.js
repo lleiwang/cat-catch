@@ -11,6 +11,7 @@ let allCount = 0;
 // 提示 操作按钮 DOM
 const $tips = $("#Tips");
 const $down = $("#down");
+const $mergeDown = $("#mergeDown");
 // 储存所有资源数据
 const allData = new Map([
     [true, new Map()],  // 当前页面
@@ -26,6 +27,8 @@ let activeTab = true;
 const downData = [];
 // 图标地址
 const favicon = new Map();
+// 当前页面DOM
+let pageDOM = undefined;
 // HeartBeat
 chrome.runtime.sendMessage(chrome.runtime.id, { Message: "HeartBeat" });
 // 清理冗余数据
@@ -33,7 +36,7 @@ chrome.runtime.sendMessage(chrome.runtime.id, { Message: "clearRedundant" });
 // 监听下载 出现服务器拒绝错误 调用下载器
 chrome.downloads.onChanged.addListener(function (item) {
     if (G.catDownload) { delete downData[item.id]; return; }
-    const errorList = ["SERVER_BAD_CONTENT", "SERVER_UNAUTHORIZED", "SERVER_UNAUTHORIZED", "SERVER_FORBIDDEN", "SERVER_UNREACHABLE", "SERVER_CROSS_ORIGIN_REDIRECT"];
+    const errorList = ["SERVER_BAD_CONTENT", "SERVER_UNAUTHORIZED", "SERVER_FORBIDDEN", "SERVER_UNREACHABLE", "SERVER_CROSS_ORIGIN_REDIRECT", "SERVER_FAILED"];
     if (item.error && errorList.includes(item.error.current) && downData[item.id]) {
         catDownload(downData[item.id]);
         delete downData[item.id];
@@ -59,6 +62,9 @@ function AddMedia(data, currentTab = true) {
         trimName = trimName.substr(0, 25) + '...' + trimName.substr(-30);
     }
     //添加下载文件名
+    Object.defineProperty(data, "pageDOM", {
+        get() { return pageDOM; }
+    });
     data.downFileName = G.TitleName ? templates(G.downFileName, data) : data.name;
     // 文件大小单位转换
     data._size = data.size;
@@ -132,9 +138,11 @@ function AddMedia(data, currentTab = true) {
         if (!mediaInfo.data("state")) {
             mediaInfo.data("state", true);
             if (isM3U8(data)) {
-                let hls = new Hls({ enableWorker: false });
-                hls.loadSource(data.url);
-                hls.attachMedia(preview[0]);
+                const hls = new Hls({ enableWorker: false });
+                setRefererPopup(data.referer, function () {
+                    hls.loadSource(data.url);
+                    hls.attachMedia(preview[0]);
+                });
                 hls.on(Hls.Events.BUFFER_CREATED, function (event, data) {
                     if (data.tracks && !data.tracks.audiovideo) {
                         !data.tracks.audio && mediaInfo.append("<br><b>无音频</b>");
@@ -166,9 +174,13 @@ function AddMedia(data, currentTab = true) {
                     }
                 });
             } else if (data.isPlay) {
-                preview.attr("src", data.url);
+                setRefererPopup(data.referer, function () {
+                    preview.attr("src", data.url);
+                });
             } else if (isPicture(data)) {
-                data.html.find("#screenshots").show().attr("src", data.url);
+                setRefererPopup(data.referer, function () {
+                    data.html.find("#screenshots").show().attr("src", data.url);
+                });
                 return false;
             } else {
                 return false;
@@ -210,19 +222,22 @@ function AddMedia(data, currentTab = true) {
     // 下载
     data.html.find('#download').click(function () {
         if (G.m3u8dl && (isM3U8(data) || isMPD(data))) {
-            let m3u8dlArg = templates(G.m3u8dlArg, data);
-            let url = 'm3u8dl://' + Base64.encode(m3u8dlArg);
-            if (url.length >= 2046) {
-                navigator.clipboard.writeText(m3u8dlArg);
-                Tips("m3u8dl参数太长无法唤醒m3u8DL程序, 请手动粘贴下载。", 2000);
+            if (!data.url.startsWith("blob:")) {
+                let m3u8dlArg = templates(G.m3u8dlArg, data);
+                let url = 'm3u8dl://' + Base64.encode(m3u8dlArg);
+                if (url.length >= 2046) {
+                    navigator.clipboard.writeText(m3u8dlArg);
+                    Tips("m3u8dl参数太长无法唤醒m3u8DL程序, 请手动粘贴下载。", 2000);
+                    return false;
+                }
+                if (G.isFirefox) {
+                    window.location.href = url;
+                    return false;
+                }
+                chrome.tabs.update({ url: url });
                 return false;
             }
-            if (G.isFirefox) {
-                window.location.href = url;
-                return false;
-            }
-            chrome.tabs.update({ url: url });
-            return false;
+            Tips("blob地址无法调用m3u8DL下载", 1500);
         }
         chrome.downloads.download({
             url: data.url,
@@ -279,7 +294,7 @@ function AddMedia(data, currentTab = true) {
     //解析m3u8
     data.html.find('#parsing').click(function () {
         chrome.tabs.get(G.tabId, function (tab) {
-            let url = `/${data.parsing}.html?url=${encodeURIComponent(data.url)}&title=${encodeURIComponent(data.title)}&tabid=${data.tabId}`;
+            let url = `/${data.parsing}.html?url=${encodeURIComponent(data.url)}&title=${encodeURIComponent(data.title)}&tabid=${data.tabId == -1 ? G.tabId : data.tabId}`;
             if (data.referer) {
                 url += `&referer=${encodeURIComponent(data.referer)}`;
             } else {
@@ -293,6 +308,7 @@ function AddMedia(data, currentTab = true) {
     data._checked = true;
     data.html.find('input').click(function (event) {
         data._checked = this.checked;
+        mergeDownButton();
         event.originalEvent.cancelBubble = true;
     });
     Object.defineProperty(data, "checked", {
@@ -344,7 +360,8 @@ $(".Tabs .TabButton").click(function () {
     $(this).addClass("Active");
     $(".container").removeClass("TabShow").eq(index).addClass("TabShow");
     UItoggle();
-    $("#filter, #scriptCatch, #unfold").hide();
+    // $("#filter, #scriptCatch, #unfold").hide();
+    $("#filter, #unfold").hide();
 });
 // 其他页面
 $('#allTab').click(function () {
@@ -364,36 +381,29 @@ $('#allTab').click(function () {
 });
 // 下载选中文件
 $('#DownFile').click(function () {
-    let maxSize = 0;
-    const tempData = [];
-    getData().forEach(function (data) {
-        if (data.checked) {
-            const size = data._size ?? 0;
-            maxSize = size > maxSize ? size : maxSize;
-            tempData.push(data);
-        }
-    });
-    if (tempData.length >= 10 && !confirm("共 " + tempData.length + "个文件，是否确认下载?")) {
+    const [checkedData, maxSize] = getCheckedData();
+    if (checkedData.length >= 10 && !confirm("共 " + checkedData.length + "个文件，是否确认下载?")) {
         return;
     }
-    if (tempData.length == 2 && maxSize < 2147483648 && confirm("是否合并视频音频?")) {
-        chrome.runtime.sendMessage({
-            Message: "catCatchFFmpeg",
-            action: "openFFmpeg",
-            extra: "等待接收媒体文件...请勿关闭本页面...猫抓下载器 页面可查看下载进度..."
-        });
-        tempData.forEach(function (data) {
-            catDownload(data, "&autosend=1&autoClose=1&title=" + data._title);
-        });
-        return true;
-    }
-    tempData.forEach(function (data) {
+    checkedData.forEach(function (data) {
         setTimeout(function () {
             chrome.downloads.download({
                 url: data.url,
                 filename: data.downFileName
             }, function (id) { downData[id] = data; });
         }, 500);
+    });
+});
+// 合并下载
+$('#mergeDown').click(function () {
+    const [checkedData, maxSize] = getCheckedData();
+    chrome.runtime.sendMessage({
+        Message: "catCatchFFmpeg",
+        action: "openFFmpeg",
+        extra: "等待接收媒体文件...请勿关闭本页面...猫抓下载器 页面可查看下载进度..."
+    });
+    checkedData.forEach(function (data) {
+        catDownload(data, "&autosend=1&autoClose=1&title=" + data._title);
     });
 });
 // 复制选中文件
@@ -440,7 +450,8 @@ $('#unfoldAll, #unfoldPlay, #unfoldFilter, #fold').click(function () {
     }
 });
 // 捕捉/录制 展开按钮 筛选按钮 按钮
-$('#Catch, #openUnfold, #openFilter, #more').click(function () {
+// $('#Catch, #openUnfold, #openFilter, #more').click(function () {
+$('#openFilter, #more').click(function () {
     // const _height = parseInt($(".container").css("margin-bottom"));
     // $(".container").css("margin-bottom", ($down[0].offsetHeight + 26) + "px");
     const $panel = $(`#${this.getAttribute("panel")}`);
@@ -479,36 +490,35 @@ $('#Clear').click(function () {
         allCount = 0;
         $all.empty();
     }
-    emptyData();
+    allData.get(activeTab).clear();
     UItoggle();
 });
 // 模拟手机端
 $("#MobileUserAgent").click(function () {
-    const action = $(this).data("switch");
-    if (action == "on") {
-        $(this).html("关闭模拟").data("switch", "off");
-    } else {
-        $(this).html("模拟手机").data("switch", "on");
-    }
-    chrome.runtime.sendMessage({ Message: "mobileUserAgent", tabId: G.tabId, action: action }, function () {
-        G.refreshClear ? $('#Clear').click() : location.reload();
+    chrome.runtime.sendMessage({ Message: "mobileUserAgent", tabId: G.tabId }, function () {
+        G.refreshClear && $('#Clear').click();
+        updateButton();
     });
 });
 // 自动下载
 $("#AutoDown").click(function () {
-    const action = $(this).data("switch");
-    if (action == "on") {
-        $(this).html("关闭自动下载").data("switch", "off");
-    } else {
-        $(this).html("自动下载").data("switch", "on");
-    }
-    chrome.runtime.sendMessage({ Message: "autoDown", tabId: G.tabId, action: action });
+    chrome.runtime.sendMessage({ Message: "autoDown", tabId: G.tabId }, function () {
+        updateButton();
+    });
+});
+// 深度搜索 缓存捕捉 注入脚本
+$("#search, #catch, #recorder, #recorder2").click(function () {
+    chrome.runtime.sendMessage({ Message: "script", tabId: G.tabId, script: this.id + ".js" }, function () {
+        G.refreshClear && $('#Clear').click();
+        updateButton();
+    });
 });
 // 102以上开启 捕获按钮/注入脚本
 if (G.version >= 102) {
     $("#search").show();
-    $("#Catch").show();
-    $("#otherScript").show();
+    $("#catch").show();
+    $("#recorder").show();
+    $("#recorder2").show();
 }
 // Firefox 关闭画中画 全屏 修复右边滚动条遮挡
 if (G.isFirefox) {
@@ -525,15 +535,19 @@ $("[go]").click(function () {
 });
 // 暂停 启用
 $("#enable").click(function () {
-    chrome.storage.sync.set({ enable: !G.enable }, function () {
-        $("#enable").html(G.enable ? "暂停" : "启用");
-        chrome.action.setIcon({ path: G.enable ? "/img/icon.png" : "/img/icon-disable.png" });
+    chrome.runtime.sendMessage({ Message: "enable" }, function (state) {
+        $("#enable").html(state ? "暂停" : "启用");
     });
 });
 // 一些需要等待G变量加载完整的操作
 const interval = setInterval(function () {
     if (!G.initSyncComplete || !G.initLocalComplete || !G.tabId) { return; }
     clearInterval(interval);
+    // 获取页面DOM
+    chrome.tabs.sendMessage(G.tabId, { Message: "getPage" }, { frameId: 0 }, function (result) {
+        if (chrome.runtime.lastError) { return; }
+        pageDOM = new DOMParser().parseFromString(result, 'text/html');
+    });
     // 填充数据
     chrome.runtime.sendMessage(chrome.runtime.id, { Message: "getData", tabId: G.tabId }, function (data) {
         if (!data || data === "OK") {
@@ -571,36 +585,31 @@ const interval = setInterval(function () {
         sendResponse("OK");
     });
     // 获取模拟手机 自动下载 捕获 状态
-    chrome.runtime.sendMessage({ Message: "getButtonState", tabId: G.tabId }, function (state) {
-        state.MobileUserAgent && $("#MobileUserAgent").html("关闭模拟").data("switch", "off");
-        state.AutoDown && $("#AutoDown").html("关闭自动下载").data("switch", "off");
-        state.search && $("#search").html("关闭搜索");
-        state.catch && $("#catch").html("关闭捕获");
-        state.recorder && $("#recorder").html("关闭录制");
-        state.recorder2 && $("#recorder2").html("关闭屏幕捕捉");
-    });
-    // 深度搜索 注入脚本
-    $("#scriptCatch button, #search").click(function () {
-        $("#scriptCatch").hide();
-        chrome.runtime.sendMessage({ Message: "script", tabId: G.tabId, script: this.id + ".js" });
-        G.refreshClear && $('#Clear').click();
-        location.reload();
-    });
+    updateButton();
 
     // 上一次设定的倍数
     $("#playbackRate").val(G.playbackRate);
 
     $(`<style>${G.css}</style>`).appendTo("head");
-
-    // 暂停
-    $("#enable").html(G.enable ? "暂停" : "启用");
 }, 4);
 /********************绑定事件END********************/
 
+// 按钮状态更新
+function updateButton() {
+    chrome.runtime.sendMessage({ Message: "getButtonState", tabId: G.tabId }, function (state) {
+        $("#MobileUserAgent").html(state.MobileUserAgent ? "关闭模拟" : "模拟手机");
+        $("#AutoDown").html(state.AutoDown ? "关闭下载" : "自动下载");
+        $("#search").html(state.search ? "关闭搜索" : "深度搜索");
+        $("#catch").html(state.catch ? "关闭捕获" : "缓存捕获");
+        $("#recorder").html(state.recorder ? "关闭录制" : "视频录制");
+        $("#recorder2").html(state.recorder2 ? "关闭屏幕捕捉" : "屏幕捕捉");
+        $("#enable").html(state.enable ? "暂停" : "启用");
+    });
+}
 /* 格式判断 */
 function isPlay(data) {
     if (G.Player && !isJSON(data) && !isPicture(data)) { return true; }
-    const extArray = ['ogg', 'ogv', 'mp4', 'webm', 'mp3', 'wav', 'm4a', '3gp', 'mpeg', 'mov'];
+    const extArray = ['ogg', 'ogv', 'mp4', 'webm', 'mp3', 'wav', 'm4a', '3gp', 'mpeg', 'mov', 'm4s'];
     const typeArray = ['video/ogg', 'video/mp4', 'video/webm', 'audio/ogg', 'audio/mp3', 'audio/wav', 'audio/m4a', 'video/3gp', 'video/mpeg', 'video/mov'];
     return extArray.includes(data.ext) || typeArray.includes(data.type) || isM3U8(data);
 }
@@ -650,6 +659,8 @@ function copyLink(data) {
 }
 // 携带referer 下载
 function catDownload(obj, extra = "") {
+    let active = !G.downActive;
+    if (extra) { active = false; }
     chrome.tabs.get(G.tabId, function (tab) {
         chrome.tabs.create({
             url: `/download.html?url=${encodeURIComponent(
@@ -660,7 +671,7 @@ function catDownload(obj, extra = "") {
                 obj.downFileName
             )}${extra}`,
             index: tab.index + 1,
-            active: extra ? false : true
+            active: active
         });
     });
 }
@@ -691,6 +702,35 @@ function UItoggle() {
             this.classList.remove("faviconFlag");
         }
     });
+    if (getData().size >= 2) { mergeDownButton(); }
+}
+// 检查是否符合条件 更改 合并下载 按钮状态
+function mergeDownButtonCheck(data) {
+    if (!data.type) {
+        return ['ogg', 'ogv', 'mp4', 'webm', 'mp3', 'wav', 'm4a', '3gp', 'mpeg', 'mov', 'm4s', 'aac'].includes(data.ext);
+    }
+    return data.type.startsWith("video") || data.type.startsWith("audio") || data.type.endsWith("octet-stream");
+}
+function mergeDownButton() {
+    const [checkedData, maxSize] = getCheckedData();
+    if (checkedData.length == 2 && checkedData.every(mergeDownButtonCheck) && maxSize < 2147483648) {
+        $mergeDown.show();
+        return;
+    }
+    $mergeDown.hide();
+}
+// 获取当前标签 所有选择的文件
+function getCheckedData() {
+    const checkedData = [];
+    let maxSize = 0;
+    getData().forEach(function (data) {
+        if (data.checked) {
+            const size = data._size ?? 0;
+            maxSize = size > maxSize ? size : maxSize;
+            checkedData.push(data);
+        }
+    });
+    return [checkedData, maxSize];
 }
 // 获取当前标签的资源列表 存在requestId返回该资源
 function getData(requestId = false) {
@@ -698,9 +738,6 @@ function getData(requestId = false) {
         return allData.get(activeTab).get(requestId);
     }
     return allData.get(activeTab);
-}
-function emptyData() {
-    allData.get(activeTab).clear();
 }
 // 获取所有资源列表
 function getAllData() {

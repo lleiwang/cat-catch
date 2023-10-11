@@ -11,13 +11,18 @@ const title = params.get("title");
 _referer ? setReferer(_referer, start) : start();
 
 function start() {
+    awaitG(function () {
+        $("#autoClose").prop("checked", autoClose ? true : G.downAutoClose);
+        $("#downActive").prop("checked", G.downActive);
+        $(`<style>${G.css}</style>`).appendTo("head");
+    });
+
     chrome.tabs.getCurrent(function (tab) {
         startDownload(tab.id);
     });
 }
 
 function startDownload(tabId) {
-    $(`<style>${G.css}</style>`).appendTo("head");
     // 储存blob
     let blobUrl = "";
     // 下载的文件ID
@@ -35,8 +40,6 @@ function startDownload(tabId) {
 
     const $downFilepProgress = $("#downFilepProgress");
     const $progress = $(".progress");
-
-    $("#autoClose").prop("checked", autoClose);
 
     // 使用ajax下载文件
     $("#downfile").show();
@@ -91,7 +94,7 @@ function startDownload(tabId) {
                 downId = downloadId;
             });
         } catch (e) {
-            $downFilepProgress.html("下载失败... " + e);
+            $downFilepProgress.html("保存到磁盘失败... " + e);
         }
     });
 
@@ -127,6 +130,20 @@ function startDownload(tabId) {
         chrome.downloads.showDefaultFolder();
     });
 
+    // 下载完成关闭本页面
+    $("#autoClose").click(function () {
+        chrome.storage.sync.set({
+            downAutoClose: $("#autoClose").prop("checked")
+        });
+    });
+
+    // 不跳转到下载器页面
+    $("#downActive").click(function () {
+        chrome.storage.sync.set({
+            downActive: $("#downActive").prop("checked")
+        });
+    });
+
     // 发送到在线ffmpeg
     $("#ffmpeg").click(function () {
         sendFile();
@@ -142,13 +159,12 @@ function startDownload(tabId) {
                 media: [{ data: blobUrl, name: getUrlFileName(_url) }],
                 title: title,
                 tabId: tabId
-            }, function () {
-                $downFilepProgress.html("已发送到在线ffmpeg");
             });
         });
     }
     chrome.runtime.onMessage.addListener(function (Message, sender, sendResponse) {
         if (!Message.Message || Message.Message != "catCatchFFmpegResult" || Message.state != "ok" || tabId == 0 || Message.tabId != tabId) { return; }
+        $downFilepProgress.html("已发送到在线ffmpeg");
         if (Message.state == "ok" && $("#autoClose").prop("checked")) {
             setTimeout(() => {
                 window.close();

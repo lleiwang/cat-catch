@@ -27,7 +27,7 @@
         </table>
         <div class="flex-end">
           <button type="button" id="AddExt" class="button2">添加后缀</button>
-          <button type="button" id="ResetExt" data-reset="Ext">重置后缀</button>
+          <button type="button" id="ResetExt" data-reset="Ext">重置后缀设置</button>
           <button type="button" id="allDisable" data-switch="Ext">全部禁用</button>
           <button type="button" id="allEnable" data-switch="Ext">全部启用</button>
         </div>
@@ -48,7 +48,7 @@
         </table>
         <div class="flex-end">
           <button type="button" id="AddType" class="button2">添加类型</button>
-          <button type="button" id="ResetType" data-reset="Type">重置类型</button>
+          <button type="button" id="ResetType" data-reset="Type">重置类型设置</button>
           <button type="button" id="allDisable" data-switch="Type">全部禁用</button>
           <button type="button" id="allEnable" data-switch="Type">全部启用</button>
         </div>
@@ -57,23 +57,26 @@
 
     <section>
       <h1 class="optionsTitle">
-        <img src="img/regex.png" style="width: 18px" />正则匹配
+        <img src="img/regex.png" style="width: 18px" />正则匹配 / 屏蔽资源
       </h1>
       <div class="optionBox">
-        <span class="explain"><b>标志</b> i: 忽略大小写, g: 全局搜索。也可为空。</span><br />
-        <span class="explain"><b>扩展</b> 为获取到的URL指定一个扩展名, 可留空，会自动截取扩展名(很多文件并不存在扩展名)</span><br />
+        <span class="explain"><b>屏蔽资源</b> 屏蔽不想出现的资源</span><br>
+        <span class="explain"><b>标志</b> i: 忽略大小写, g: 全局搜索。也可为空。</span><br>
+        <span class="explain"><b>扩展</b> 为获取到的URL指定一个扩展名, 可留空，会自动截取扩展名(很多文件并不存在扩展名)</span><br>
+        <span class="explain"><b>提示</b> 正则表达式占用资源较高, 非必要谨慎使用</span><br><br>
         <table id="regexList">
           <tr>
             <th>标志</th>
             <th>正则表达式</th>
             <th>扩展</th>
+            <th>屏蔽资源</th>
             <th>启用</th>
             <th>删除</th>
           </tr>
         </table>
         <div class="flex-end">
           <button type="button" id="AddRegex" class="button2">添加正则</button>
-          <button type="button" id="ResetRegex" data-reset="Regex">重置正则</button>
+          <button type="button" id="ResetRegex" data-reset="Regex">重置正则设置</button>
           <button type="button" id="allDisable" data-switch="Regex">全部禁用</button>
           <button type="button" id="allEnable" data-switch="Regex">全部启用</button>
         </div>
@@ -96,21 +99,21 @@
         <span class="explain">
           为方便使用第三方应用，自定义复制按钮写入剪贴板的内容。<br />
           <a href="https://o2bmm.gitbook.io/cat-catch/docs/settings#keywords" target="_blank">猫抓替换关键词列表</a><br /><br />
-        <div class="item">
-          <div>HLS m3u8文件</div>
-          <textarea id="copyM3U8" save="input" type="text" class="width100"></textarea>
-        </div>
-        <div class="item" style="margin-top: 10px;">
-          <div>DASH mpb文件</div>
-          <textarea id="copyMPD" save="input" type="text" class="width100"></textarea>
-        </div>
-        <div class="item" style="margin-top: 10px;">
-          <div>其他文件</div>
-          <textarea id="copyOther" save="input" type="text" class="width100"></textarea>
-        </div>
-        <div class="flex-end">
-          <button type="button" id="ResetCopy">重置复制选项</button>
-        </div>
+          <div class="item">
+            <div>HLS m3u8文件</div>
+            <textarea id="copyM3U8" save="input" type="text" class="width100"></textarea>
+          </div>
+          <div class="item" style="margin-top: 10px;">
+            <div>DASH mpb文件</div>
+            <textarea id="copyMPD" save="input" type="text" class="width100"></textarea>
+          </div>
+          <div class="item" style="margin-top: 10px;">
+            <div>其他文件</div>
+            <textarea id="copyOther" save="input" type="text" class="width100"></textarea>
+          </div>
+          <div class="flex-end">
+            <button type="button" id="ResetCopy">重置复制设置</button>
+          </div>
       </div>
     </section>
 
@@ -134,7 +137,8 @@
           <div class="item">
             <div style="margin-bottom: 5px;margin-top: 5px;">
               <a href="https://o2bmm.gitbook.io/cat-catch/docs/settings#keywords" target="_blank">猫抓替换关键词列表</a>
-              <a href="https://nilaoda.github.io/N_m3u8DL-CLI/Advanced.html" target="_blank" style="margin-left: 10px;">N_m3u8DL-CLI 参数</a>
+              <a href="https://nilaoda.github.io/N_m3u8DL-CLI/Advanced.html" target="_blank"
+                style="margin-left: 10px;">N_m3u8DL-CLI 参数</a>
               <p>参数设置</p>
             </div>
             <textarea id="m3u8dlArg" save="input" type="text" class="width100 break-all" rows="3"></textarea>
@@ -209,8 +213,11 @@
           </div>
           <div id="testTag" class="hide break-all">
             <div class="item">
-              <div> <p>测试</p> </div>
-              <textarea id="testTextarea" type="text" class="width100 break-all" rows="3">${url} ${referer|exists:'--headers "Referer:*"'} ${url|regexp:"(https?://[^?]*)"|replace:"http://","https://"|to:base64}</textarea>
+              <div>
+                <p>测试</p>
+              </div>
+              <textarea id="testTextarea" type="text" class="width100 break-all"
+                rows="3">${url} ${referer|exists:'--headers "Referer:*"'} ${url|regexp:"(https?://[^?]*)"|replace:"http://","https://"|to:base64}</textarea>
             </div>
             ${url}<input type="text" class="width100" value="https://bmmmd.com/test.m3u8" id="url">
             ${referer}<input type="text" class="width100" value="https://bmmmd.com/" id="referer">
@@ -221,7 +228,47 @@
           </div>
           <div class="flex-end">
             <button type="button" id="showTestTag">测试</button>
-            <button type="button" id="ResetTag">重置标签</button>
+            <button type="button" id="ResetTag">重置标签设置</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h1 class="optionsTitle">下载器</h1>
+      <div class="optionBox" id="downOption">
+        <span class="explain">
+          如果检测到资源下载失败, 自动启用下载器再次尝试下载.
+        </span>
+        <div class="list">
+          <div class="item">
+            <div>始终不启用猫抓下载器</div>
+            <div class="switch">
+              <label class="switchLabel switchRadius">
+                <input type="checkbox" id="catDownload" save="click" class="switchInput" />
+                <span class="switchRound switchRadius"><em class="switchRoundBtn switchRadius"></em></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="item">
+            <div>下载完自动关闭页面</div>
+            <div class="switch">
+              <label class="switchLabel switchRadius">
+                <input type="checkbox" id="downAutoClose" save="click" class="switchInput" />
+                <span class="switchRound switchRadius"><em class="switchRoundBtn switchRadius"></em></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="item">
+            <div>后台打开下载器页面</div>
+            <div class="switch">
+              <label class="switchLabel switchRadius">
+                <input type="checkbox" id="downActive" save="click" class="switchInput" />
+                <span class="switchRound switchRadius"><em class="switchRoundBtn switchRadius"></em></span>
+              </label>
+            </div>
           </div>
         </div>
       </div>
@@ -236,11 +283,6 @@
               使用本地播放器调用协议打开视频预览 <select id="PlayerTemplate" class="select"></select>
             </div>
             <input id="Player" save="input" type="text" class="width100" placeholder="留空为不启用 默认使用popup页面预览视频" />
-          </div>
-
-          <div class="item">
-            <div>自动清理幽灵数据(默认100条后自动清理)</div>
-            <input id="OtherAutoClear" save="input" type="number" />
           </div>
 
           <div class="item">
@@ -276,20 +318,11 @@
           <div class="item">
             <div>刷新、跳转到新页面 清空当前标签抓取的数据</div>
             <div class="switch">
-              <label class="switchLabel switchRadius">
-                <input type="checkbox" id="refreshClear" save="click" class="switchInput" />
-                <span class="switchRound switchRadius"><em class="switchRoundBtn switchRadius"></em></span>
-              </label>
-            </div>
-          </div>
-
-          <div class="item">
-            <div>始终不启用猫抓下载器</div>
-            <div class="switch">
-              <label class="switchLabel switchRadius">
-                <input type="checkbox" id="catDownload" save="click" class="switchInput" />
-                <span class="switchRound switchRadius"><em class="switchRoundBtn switchRadius"></em></span>
-              </label>
+              <select id="autoClearMode" class="select" save="select">
+                <option value="0">不清空</option>
+                <option value="1">正常清理</option>
+                <option value="2">更频繁</option>
+              </select>
             </div>
           </div>
 

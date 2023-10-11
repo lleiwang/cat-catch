@@ -1,8 +1,11 @@
 // 全局变量
 var G = {};
+G.initSyncComplete = false;
+G.initLocalComplete = false;
 // 缓存数据
 var cacheData = { init: true };
-var refererData = [];
+G.blackList = new Set();
+G.referer = new Map();
 // 当前tabID
 chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
     if (tabs[0] && tabs[0].id) {
@@ -56,10 +59,10 @@ G.OptionLists = {
         { "type": "application/m4s", "size": 0, "state": true }
     ],
     Regex: [
-        { "type": "ig", "regex": "https://cache\\.video\\.[a-z]*\\.com/dash\\?tvid=.*", "ext": "json", "state": true }
+        { "type": "ig", "regex": "https://cache\\.video\\.[a-z]*\\.com/dash\\?tvid=.*", "ext": "json", "state": false },
+        { "type": "ig", "regex": ".*\\.bilivideo\\.(com|cn).*\\/live-bvc\\/.*m4s", "ext": "", "blackList": true, "state": false },
     ],
     TitleName: false,
-    OtherAutoClear: 100,
     Player: "",
     ShowWebIco: true,
     MobileUserAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1",
@@ -70,27 +73,25 @@ G.OptionLists = {
     aria2Secret:'',
     playbackRate: 2,
     copyM3U8: "${url}",
-    copyMPD: `ffmpeg \${referer|exists:'-headers "referer: *"'} -i "\${url}" -c copy "\${title}_\${now}.mp4"`,
+    copyMPD: "${url}",
     copyOther: "${url}",
-    refreshClear: true,
-    initSyncComplete: false,
-    initLocalComplete: false,
+    autoClearMode: 1,
     catDownload: false,
     saveAs: false,
     userAgent: "",
     downFileName: "${title}.${ext}",
     css: "",
     checkDuplicates: true,
-    enable: true
+    enable: true,
+    downActive: false,
+    downAutoClose: false,
 };
-G.TabIdList = {
+// 本地储存的配置
+G.LocalVar = {
     featMobileTabId: [],
     featAutoDownTabId: [],
-    mediaControl: { tabid: 0, index: -1 },
+    mediaControl: { tabid: 0, index: -1 }
 };
-
-// Init
-InitOptions();
 
 // 102版本以上 非Firefox 开启更多功能
 // G.isMobile = /Mobi|Android|iPhone/i.test(navigator.userAgent);
@@ -122,13 +123,16 @@ const ffmpeg = {
 const reProtocol = /^[\w]+:\/\/.+/i;
 const reFilename = /filename="?([^"]+)"?/;
 const reRange = /([\d]+)-([\d]+)\/([\d]+)/;
-// const reYoutube = /&(range|rbuf|rn|cver|altitags|pot|fallback_count|sq)=[^&]*/g;
 const reStringModify = /['\\:\*\?"<\/>\|~]/g;
+const reTemplates = /\$\{(fullFileName|fileName|ext|title|referer|url|now|fullDate|time|initiator|webUrl|userAgent|page) ?\| ?([^}]+)\}/g;
 
 // 防抖
 let debounce = undefined;
 let debounceCount = 0;
 let debounceTime = 0;
+
+// Init
+InitOptions();
 
 // 初始变量
 function InitOptions() {
@@ -144,17 +148,25 @@ function InitOptions() {
     chrome.storage.sync.get(G.OptionLists, function (items) {
         // Ext的Array转为Map类型
         items.Ext = new Map(items.Ext.map(item => [item.ext, item]));
+        // Type的Array转为Map类型
+        items.Type = new Map(items.Type.map(item => [item.type, { size: item.size, state: item.state }]));
         // 预编译正则匹配
         items.Regex = items.Regex.map(item => {
             let reg = undefined;
             try { reg = new RegExp(item.regex, item.type) } catch (e) { item.state = false; }
-            return { regex: reg, ext: item.ext, state: item.state }
+            return { regex: reg, ext: item.ext, blackList: item.blackList, state: item.state }
         });
         G = { ...items, ...G };
+
+        const icon = { path: G.enable ? "/img/icon.png" : "/img/icon-disable.png" };
+        G.isFirefox ? browser.browserAction.setIcon(icon) : chrome.action.setIcon(icon);
+
         G.initSyncComplete = true;
     });
     // 读取local配置数据 交给全局变量G
-    chrome.storage.local.get(G.TabIdList, function (items) {
+    chrome.storage.local.get(G.LocalVar, function (items) {
+        items.featMobileTabId = new Set(items.featMobileTabId);
+        items.featAutoDownTabId = new Set(items.featAutoDownTabId);
         G = { ...items, ...G };
         G.initLocalComplete = true;
     });
@@ -166,16 +178,25 @@ chrome.storage.onChanged.addListener(function (changes, namespace) {
         return;
     }
     for (let [key, { oldValue, newValue }] of Object.entries(changes)) {
+        newValue ??= G.OptionLists[key];
         if (key == "Ext") {
             G.Ext = new Map(newValue.map(item => [item.ext, item]));
+            continue;
+        }
+        if (key == "Type") {
+            G.Type = new Map(newValue.map(item => [item.type, { size: item.size, state: item.state }]));
             continue;
         }
         if (key == "Regex") {
             G.Regex = newValue.map(item => {
                 let reg = undefined;
                 try { reg = new RegExp(item.regex, item.type) } catch (e) { item.state = false; }
-                return { regex: reg, ext: item.ext, state: item.state }
+                return { regex: reg, ext: item.ext, blackList: item.blackList, state: item.state }
             });
+            continue;
+        }
+        if (key == "featMobileTabId" || key == "featAutoDownTabId") {
+            G[key] = new Set(newValue);
             continue;
         }
         G[key] = newValue;
@@ -193,31 +214,22 @@ chrome.runtime.onInstalled.addListener(function (details) {
 
 // 清理冗余数据
 function clearRedundant() {
-    // console.log("clearRedundant");
     chrome.tabs.query({}, function (tabs) {
-        let allTabId = [-1];    // 初始化一个-1 防止断开sw重连后 幽灵数据丢失
+        const allTabId = [];
         for (let item of tabs) {
             allTabId.push(item.id);
         }
         if (!cacheData.init) {
             // 清理 缓存数据
+            let cacheDataFlag = false;
             for (let key in cacheData) {
                 if (!allTabId.includes(parseInt(key))) {
+                    cacheDataFlag = true;
                     delete cacheData[key];
                 }
             }
-            chrome.storage.local.set({ MediaData: cacheData });
+            cacheDataFlag && chrome.storage.local.set({ MediaData: cacheData });
         }
-        // 清理 declarativeNetRequest
-        chrome.declarativeNetRequest.getSessionRules(function (rules) {
-            for (let item of rules) {
-                if (!allTabId.includes(item.id)) {
-                    chrome.declarativeNetRequest.updateSessionRules({
-                        removeRuleIds: [item.id]
-                    });
-                }
-            }
-        });
         // 清理脚本
         G.scriptList.forEach(function (scriptList) {
             scriptList.tabId.forEach(function (tabId) {
@@ -226,8 +238,35 @@ function clearRedundant() {
                 }
             });
         });
+
+        if (!G.initLocalComplete) { return; }
+
+        // 清理 declarativeNetRequest 模拟手机
+        chrome.declarativeNetRequest.getSessionRules(function (rules) {
+            let mobileFlag = false;
+            for (let item of rules) {
+                if (!allTabId.includes(item.id)) {
+                    mobileFlag = true;
+                    G.featMobileTabId.delete(item.id);
+                    chrome.declarativeNetRequest.updateSessionRules({
+                        removeRuleIds: [item.id]
+                    });
+                }
+            }
+            mobileFlag && chrome.storage.local.set({ featMobileTabId: Array.from(G.featMobileTabId) });
+        });
+        // 清理自动下载
+        let autoDownFlag = false;
+        G.featAutoDownTabId.forEach(function (tabId) {
+            if (!allTabId.includes(tabId)) {
+                autoDownFlag = true;
+                G.featAutoDownTabId.delete(tabId);
+            }
+        });
+        autoDownFlag && chrome.storage.local.set({ featAutoDownTabId: Array.from(G.featAutoDownTabId) });
     });
-    refererData = [];
+    // G.referer.clear();
+    // G.blackList.clear();
 }
 
 // 替换掉不允许的文件名称字符

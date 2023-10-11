@@ -1,6 +1,9 @@
 {
   "background": {
-    "scripts": ["js/firefox.js", "js/background.js"]
+    "scripts": [
+      "js/firefox.js",
+      "js/background.js"
+    ]
   },
   "browser_action": {
     "default_icon": "img/icon.png",
@@ -30,7 +33,8 @@
     "scripting",
     "activeTab",
     "*://*/*",
-    "<all_urls>"
+    "<all_urls>",
+    "declarativeNetRequest"
   ],
   "commands": {
     "_execute_browser_action": {},
@@ -53,17 +57,24 @@
   "browser_specific_settings": {
     "gecko": {
       "id": "xifangczy@gmail.com",
-      "strict_min_version": "93.0"
+      "strict_min_version": "113.0"
     }
   },
   "content_scripts": [
     {
-      "matches": ["https://*/*", "http://*/*"],
-      "js": ["js/content-script.js"],
+      "matches": [
+        "https://*/*",
+        "http://*/*"
+      ],
+      "js": [
+        "js/content-script.js"
+      ],
       "all_frames": true,
       "run_at": "document_start"
     }
   ],
-  "web_accessible_resources": ["catch-script/*"],
-  "version": "2.4.3"
+  "web_accessible_resources": [
+    "catch-script/*"
+  ],
+  "version": "2.4.6"
 }

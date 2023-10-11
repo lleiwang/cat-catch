@@ -147,6 +147,15 @@
             sendResponse("ok");
             return true;
         }
+        if (Message.Message == "getPage") {
+            if (Message.find) {
+                const DOM = document.querySelector(Message.find);
+                DOM ? sendResponse(DOM.innerHTML) : sendResponse("");
+                return true;
+            }
+            sendResponse(document.documentElement.outerHTML);
+            return true;
+        }
     });
 
     // Heart Beat
@@ -173,7 +182,7 @@
     }
 
     window.addEventListener("message", (event) => {
-        if (!event.data.action) { return; }
+        if (!event.data || !event.data.action) { return; }
         if (event.data.action == "catCatchAddMedia") {
             if (!event.data.url) { return; }
             chrome.runtime.sendMessage({
@@ -215,6 +224,10 @@
         if (event.data.action == "catCatchFFmpegResult") {
             if (!event.data.state || !event.data.tabId) { return; }
             chrome.runtime.sendMessage({ Message: "catCatchFFmpegResult", state: event.data.state, tabId: event.data.tabId });
+        }
+        if (event.data.action == "catCatchToBackground") {
+            delete event.data.action;
+            chrome.runtime.sendMessage(event.data);
         }
     }, false);
 
